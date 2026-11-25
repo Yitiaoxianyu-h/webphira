@@ -154,7 +154,6 @@ $env:PHP_CLI_SERVER_WORKERS=8; php -S 0.0.0.0:8000 index.php
 ## Known limitations
 
 - **Chart export / respack features are unavailable**: those paths rely on `std::thread::spawn`, which panics on single-threaded wasm
-- Audio/video sync and frame rate are still being verified
 - The first load downloads roughly 9 MB of wasm plus game assets; a longer black screen on slow networks is expected
 
 ## Open source projects used

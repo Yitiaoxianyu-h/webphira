@@ -156,7 +156,6 @@ $env:PHP_CLI_SERVER_WORKERS=8; php -S 0.0.0.0:8000 index.php
 ## 已知限制
 
 - **导出谱面 / respack 相关功能不可用**：这些路径依赖 `std::thread::spawn`，wasm 单线程下会 panic
-- 音画同步与帧率仍在持续验证中
 - 首次加载需下载约 9 MB 的 wasm 与游戏资源，网络较慢时黑屏等待属正常现象
 
 ## 使用的开源项目
