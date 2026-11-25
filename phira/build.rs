@@ -1,0 +1,41 @@
+fn git_stdout(args: &[&str]) -> Option<String> {
+    let output = std::process::Command::new("git").args(args).output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let stdout = std::str::from_utf8(&output.stdout).ok()?.trim().to_string();
+    if stdout.is_empty() {
+        None
+    } else {
+        Some(stdout)
+    }
+}
+
+fn version_string(v: &str, g: &str) -> String {
+    if let Some(b) = option_env!("BUILD_ID") {
+        format!("{} ({}, {})", v, g, b)
+    } else {
+        format!("{} ({})", v, g)
+    }
+}
+
+fn main() {
+    dotenv_build::output(dotenv_build::Config::default()).unwrap();
+
+    let git_dir = git_stdout(&["rev-parse", "--git-dir"]).unwrap_or_else(|| ".git".to_string());
+    println!("cargo:rerun-if-changed={}/HEAD", git_dir);
+    println!("cargo:rerun-if-changed={}/packed-refs", git_dir);
+
+    if let Some(ref_path) = git_stdout(&["symbolic-ref", "-q", "HEAD"]) {
+        println!("cargo:rerun-if-changed={}/{}", git_dir, ref_path);
+    }
+
+    let git_hash = git_stdout(&["rev-parse", "--short=7", "HEAD"]).unwrap_or_else(|| "unknown".to_string());
+    println!("cargo:rustc-env=VERSION_STRING={}", version_string(env!("CARGO_PKG_VERSION"), &git_hash));
+
+    // wasm 目标的 GL / 宿主函数由页面 JS（gl.js / host.js）在运行时提供，
+    // 链接时允许这些符号保持未定义并变成 wasm imports。
+    if std::env::var("CARGO_CFG_TARGET_ARCH").as_deref() == Ok("wasm32") {
+        println!("cargo:rustc-link-arg=--allow-undefined");
+    }
+}

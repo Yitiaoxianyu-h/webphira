@@ -1,0 +1,13 @@
+[package]
+name = "phira-mp-macros"
+version = "0.1.0"
+# 上游 workspace 用 edition 2024；本仓库统一 2021，proc-macro 内容与 edition 无关。
+edition = "2021"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1"
+syn = { version = "2.0", features = ["full"] }
+quote = "1.0"

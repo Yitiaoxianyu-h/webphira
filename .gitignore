@@ -1,0 +1,73 @@
+inner.rs
+
+/target
+/assets/font.ttf
+/cache
+/data
+/.cargo
+/config.txt
+/assets/background.jpg
+/assets/res
+/monitor-config.yml
+/.vscode
+
+/prpr-avc/static-lib
+
+# Mac
+
+._*
+.DS_Store
+/run_ios.sh
+/prebuild_ios.sh
+/build_ios.sh
+/build
+/*.ipa
+/phira.app
+/phira.xcodeproj/project.xcworkspace/xcuserdata/
+/xcode/LocalSigning.xcconfig
+/dist
+/project.yml
+/prpr.scent
+/.cargo
+
+# Test
+
+/test
+/log*
+/build_event_debug.sh
+
+
+# OHOS
+
+/phira/dist/
+
+# ---- 浏览器移植版新增 ----
+
+# 进度记录（本地维护，不上传到仓库）
+PROGRESS.md
+
+# 本机编译出的可执行文件与子目录构建产物
+*.exe
+**/target/
+/build-log.txt
+
+# 构建产物：由 web/build.ps1 生成，不上传到仓库
+/web/pkg/
+
+# 本地运行时数据（账号、谱面、本地记录等隐私数据）
+/data/
+/data.json
+
+# 打包/备份压缩包
+*.zip
+
+# macOS / Xcode 用户数据
+phira.xcodeproj/**/xcuserdata/
+phira.xcodeproj/**/*.xcuserdatad/
+*.xcuserstate
+
+# 编辑器 / 临时目录
+/.tmp/
+/.trae-*
+/.vscode/
+.idea/

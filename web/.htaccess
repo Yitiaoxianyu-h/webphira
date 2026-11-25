@@ -1,0 +1,48 @@
+# Phira Web —— Apache 部署配置
+#
+# 把本文件与 index.html / index.php / gl.js / host.js / pkg / assets 一起放在
+# 网站根目录即可。若你的服务器是 Nginx，请改用 README 里的 nginx 配置片段
+# （本文件对 Nginx 无效）。
+
+# 首页优先给静态的 index.html；直接访问 /index.php 也能正常工作。
+DirectoryIndex index.html index.php
+
+# 正确的 MIME 类型。application/wasm 必须配上，否则浏览器不会走流式编译。
+<IfModule mod_mime.c>
+    AddType application/wasm .wasm
+    AddType audio/ogg      .ogg
+    AddType audio/mpeg     .mp3
+    AddType font/ttf       .ttf
+    AddType font/otf       .otf
+    AddType application/json .json
+    AddType text/javascript  .js
+</IfModule>
+
+<IfModule mod_headers.c>
+    # 明确告诉浏览器/下载管理器：这些是页面内联资源，不是附件下载。
+    # 这是防止 IDM 等工具拦截 .wasm / .ogg / .ttf 的关键。
+    <FilesMatch "\.(wasm|ogg|mp3|ttf|otf|png|jpg|jpeg|json|js)$">
+        Header set Content-Disposition "inline"
+    </FilesMatch>
+    Header set X-Content-Type-Options "nosniff"
+    Header set Cache-Control "no-store, no-cache, must-revalidate, max-age=0"
+    Header set Pragma "no-cache"
+</IfModule>
+
+# 静态资源已自带 UTF-8，无需 Apache 再猜编码。
+AddDefaultCharset UTF-8
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # 无扩展名资源出口与同源代理接口，交给 PHP。
+    RewriteRule ^__res$   index.php [L]
+    RewriteRule ^__proxy$ index.php [L]
+
+    # 真实存在的文件直接由 Apache 返回（比走 PHP 快）。
+    RewriteCond %{REQUEST_FILENAME} -f
+    RewriteRule ^ - [L]
+
+    # 其余请求交给 index.php（兜底 404 / 静态文件服务）。
+    RewriteRule ^ index.php [L]
+</IfModule>

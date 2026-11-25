@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Phira Web</title>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            height: 100dvh;
+            background: #000;
+            overflow: hidden;
+        }
+
+        #glcanvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            background: #000;
+            outline: none;
+            touch-action: none;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+
+        /* ---------- 首屏加载界面 ---------- */
+        #loading {
+            position: fixed;
+            inset: 0;
+            z-index: 200;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 20px;
+            background: radial-gradient(120% 120% at 50% 0%, #1b1030 0%, #0a0713 55%, #05040a 100%);
+            color: #e8e4f5;
+            font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+            opacity: 1;
+            transition: opacity .45s ease;
+        }
+        #loading.hide {
+            opacity: 0;
+            pointer-events: none;
+        }
+        #loading .logo {
+            font-size: 46px;
+            font-weight: 800;
+            letter-spacing: .34em;
+            text-indent: .34em;
+            background: linear-gradient(90deg, #b388ff, #7c4dff 45%, #4dd0e1);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+        }
+        #loading .bar {
+            width: min(440px, 70vw);
+            height: 10px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, .10);
+            overflow: hidden;
+        }
+        #loading .fill {
+            height: 100%;
+            width: 0%;
+            border-radius: 999px;
+            background: linear-gradient(90deg, #7c4dff, #b388ff);
+            box-shadow: 0 0 14px rgba(124, 77, 255, .65);
+            transition: width .18s ease;
+        }
+        #loading .fill.indeterminate {
+            width: 42% !important;
+            animation: ld-slide 1.15s ease-in-out infinite;
+        }
+        @keyframes ld-slide {
+            0%   { margin-left: -42%; }
+            100% { margin-left: 100%; }
+        }
+        #loading .info {
+            width: min(440px, 70vw);
+            display: flex;
+            justify-content: space-between;
+            font-size: 14px;
+            color: #b9b2d6;
+            font-variant-numeric: tabular-nums;
+        }
+        #loading .hint {
+            font-size: 13px;
+            color: #8d86ab;
+        }
+
+        /* ---------- 大厅里的全屏切换按钮 ---------- */
+        /* 由 wasm 侧（MainScene）通知显隐：只在游戏大厅出现。 */
+        #fsBtn {
+            position: fixed;
+            bottom: 14px;
+            left: 14px;
+            z-index: 150;
+            width: 44px;
+            height: 44px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            border: 1px solid rgba(255, 255, 255, .18);
+            border-radius: 12px;
+            background: rgba(20, 16, 34, .55);
+            -webkit-backdrop-filter: blur(8px);
+            backdrop-filter: blur(8px);
+            color: #e8e4f5;
+            cursor: pointer;
+            opacity: 0;
+            transform: translateY(6px);
+            pointer-events: none;
+            transition: opacity .28s ease, transform .28s ease, background .2s ease, border-color .2s ease;
+        }
+        #fsBtn.show {
+            opacity: 1;
+            transform: none;
+            pointer-events: auto;
+        }
+        #fsBtn:hover {
+            background: rgba(124, 77, 255, .5);
+            border-color: rgba(179, 136, 255, .65);
+        }
+        #fsBtn:active {
+            transform: scale(.94);
+        }
+        #fsBtn svg {
+            width: 22px;
+            height: 22px;
+            display: block;
+        }
+        #fsBtn .icon-exit {
+            display: none;
+        }
+        #fsBtn.is-fullscreen .icon-enter {
+            display: none;
+        }
+        #fsBtn.is-fullscreen .icon-exit {
+            display: block;
+        }
+    </style>
+
+    <!-- Microsoft Clarity 埋点 -->
+    <script type="text/javascript">
+        (function(c,l,a,r,i,t,y){
+            c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
+            t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
+            y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
+        })(window, document, "clarity", "script", "zafn96gd6q");
+    </script>
+</head>
+<body>
+    <canvas id="glcanvas" tabindex="1"></canvas>
+
+    <div id="loading">
+        <div class="logo">PHIRA</div>
+        <div class="bar"><div class="fill" id="ldFill"></div></div>
+        <div class="info"><span id="ldPct">0%</span><span id="ldEta"></span></div>
+        <div class="hint" id="ldHint">正在下载游戏资源…</div>
+    </div>
+
+    <!-- 大厅里的全屏切换按钮：由 wasm 侧通知显隐（见 host.js 的 host_set_fullscreen_btn）。
+         放在 HTML 里而不是游戏自绘 UI，是因为全屏 API 要求调用处于真实的用户手势中，
+         经 wasm 转手的点击事件不一定还被浏览器认作手势。 -->
+    <button id="fsBtn" type="button" aria-label="进入全屏" title="进入全屏">
+        <svg class="icon-enter" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>
+        </svg>
+        <svg class="icon-exit" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/>
+        </svg>
+    </button>
+
+    <script>
+        // 全屏切换按钮的点击与状态同步。
+        (function () {
+            var btn = document.getElementById('fsBtn');
+            if (!btn) return;
+
+            function fullscreenElement() {
+                return document.fullscreenElement
+                    || document.webkitFullscreenElement
+                    || document.msFullscreenElement
+                    || null;
+            }
+
+            function syncIcon() {
+                var on = !!fullscreenElement();
+                btn.classList.toggle('is-fullscreen', on);
+                var label = on ? '退出全屏' : '进入全屏';
+                btn.setAttribute('aria-label', label);
+                btn.title = label;
+            }
+
+            // wasm 侧通过 host_set_fullscreen_btn 设置这个标记
+            window.__phiraFullscreenBtn = false;
+            window.__phiraSyncFullscreenBtn = function () {
+                btn.classList.toggle('show', !!window.__phiraFullscreenBtn);
+            };
+
+            btn.addEventListener('click', function () {
+                var p;
+                if (fullscreenElement()) {
+                    var exit = document.exitFullscreen
+                        || document.webkitExitFullscreen
+                        || document.msExitFullscreen;
+                    if (exit) p = exit.call(document);
+                } else {
+                    var el = document.documentElement;
+                    var req = el.requestFullscreen
+                        || el.webkitRequestFullscreen
+                        || el.msRequestFullscreen;
+                    if (req) p = req.call(el);
+                }
+                // 请求被浏览器拒绝时（例如非用户手势触发）不弹错误，静默忽略即可
+                if (p && p.catch) p.catch(function () {});
+            });
+
+            ['fullscreenchange', 'webkitfullscreenchange', 'msfullscreenchange'].forEach(function (name) {
+                document.addEventListener(name, syncIcon);
+            });
+            syncIcon();
+        })();
+    </script>
+
+    <pre id="errbox" style="position:fixed;left:0;top:0;max-width:100vw;max-height:60vh;overflow:auto;display:none;margin:0;padding:8px 10px;background:rgba(0,0,0,.82);color:#ff6b6b;font:12px/1.45 monospace;white-space:pre-wrap;z-index:300;pointer-events:none"></pre>
+
+    <script>
+        // 捕获加载/运行错误，便于在无人值守时排查
+        window.__err = '';
+        window.__log = '';
+        (function () {
+            ['log', 'info', 'warn', 'error'].forEach(function (level) {
+                var original = console[level];
+                console[level] = function () {
+                    var args = Array.prototype.slice.call(arguments);
+                    var text = args.map(function (a) {
+                        try { return typeof a === 'string' ? a : JSON.stringify(a); } catch (e) { return String(a); }
+                    }).join(' ');
+                    window.__log += '[' + level + '] ' + text + '\n';
+                    // console.error 也直接上屏：wasm 侧的 panic hook 用 console_error
+                    // 输出 `PANIC: <消息> @ <文件:行:列>`，这样不用开控制台就能看到。
+                    if (level === 'error') reportErr(text);
+                    original.apply(console, args);
+                };
+            });
+        })();
+
+        // 跨域请求走本地同源代理，绕过浏览器 CORS 限制（谱面预览/下载需要）。
+        (function () {
+            if (window.__phiraFetchPatched) return;
+            window.__phiraFetchPatched = true;
+            var originalFetch = window.fetch.bind(window);
+            window.fetch = function (input, init) {
+                try {
+                    var url = typeof input === 'string' ? input : (input && input.url);
+                    if (url && /^https?:\/\//i.test(url) && url.indexOf(location.origin) !== 0) {
+                        var proxied = '/__proxy?url=' + encodeURIComponent(url);
+                        if (typeof input === 'string') {
+                            return originalFetch(proxied, init);
+                        }
+                        // 不能直接 `new Request(proxied, input)`：浏览器会把这种请求判为
+                        // 网络错误（TypeError: Failed to fetch）。这里逐个复制属性，
+                        // 并用 clone().arrayBuffer() 取出请求体（POST 登录需要）。
+                        var method = input.method;
+                        var headers = input.headers;
+                        var bodyPromise = input.body ? input.clone().arrayBuffer() : Promise.resolve(null);
+                        return bodyPromise.then(function (buf) {
+                            var opt = {
+                                method: method,
+                                headers: headers,
+                                mode: 'same-origin',
+                                credentials: 'same-origin',
+                                redirect: 'follow',
+                            };
+                            if (buf !== null) opt.body = buf;
+                            return originalFetch(proxied, opt);
+                        });
+                    }
+                } catch (e) {
+                    // 回退到原始请求
+                }
+                return originalFetch(input, init);
+            };
+        })();
+
+        function reportErr(msg) {
+            // 同一条错误会被 window.onerror / unhandledrejection / console.error 多渠道
+            // 触发，这里去重，避免面板被同一行刷屏（之前会重复 4 次）。
+            if (window.__err.indexOf(msg) !== -1) return;
+            window.__err += msg + '\n';
+            document.title = 'ERR: ' + msg;
+            var box = document.getElementById('errbox');
+            if (box) {
+                box.textContent = window.__err;
+                box.style.display = 'block';
+            }
+            // 出错时收起加载界面，让错误信息可见
+            var ld = document.getElementById('loading');
+            if (ld) ld.classList.add('hide');
+        }
+        window.addEventListener('error', function (e) {
+            var extra = '';
+            if (e.error && e.error.stack) extra = '\nSTACK: ' + e.error.stack;
+            reportErr('error: ' + (e.message || e.error) + ' @ ' + (e.filename || '') + ':' + (e.lineno || 0) + extra);
+        });
+        window.addEventListener('unhandledrejection', function (e) {
+            var r = e.reason;
+            var extra = (r && r.stack) ? '\nSTACK: ' + r.stack : '';
+            reportErr('rejection: ' + ((r && (r.stack || r.message)) || r) + extra);
+        });
+    </script>
+
+    <!-- miniquad 的 WebGL 胶水层，加载时会创建全局 importObject -->
+    <script src="./gl.js"></script>
+    <!-- 浏览器宿主函数（时间、日志、随机数、prompt、文件、localStorage） -->
+    <script src="./host.js"></script>
+    <!-- sasa 的 WebAudio 后端 -->
+    <script src="./sasa_web.js"></script>
+    <!-- 补齐 gl.js 缺失的 WebGL 导入 -->
+    <script src="./gl_extra.js"></script>
+
+    <script>
+        // 暴露给 wasm-bindgen 生成的加载代码，合并进它的 imports.env。
+        // gl.js 中少量 GL 符号可能缺失，用 Proxy 提供空函数兜底（与 gl.js 自带 stub 行为一致）。
+        window.__miniquad_env = new Proxy(importObject.env, {
+            get: function (target, key) {
+                if (key in target) return target[key];
+                if (typeof key === 'string') {
+                    console.warn('missing miniquad env import: ' + key + ' (using stub)');
+                    return function () {};
+                }
+                return undefined;
+            }
+        });
+    </script>
+
+    <!-- 把 wasm-bindgen 生成的裸模块名 "env" 映射到空模块；
+         真正的 miniquad/host 导入由 build.ps1 补丁合并进 imports.env。 -->
+    <script type="importmap">
+        {
+            "imports": {
+                "env": "./pkg/env.js"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import init from "./pkg/phira.js";
+
+        const ldFill = document.getElementById('ldFill');
+        const ldPct = document.getElementById('ldPct');
+        const ldEta = document.getElementById('ldEta');
+        const ldHint = document.getElementById('ldHint');
+        const loadingEl = document.getElementById('loading');
+
+        // -------------------------------------------------------------------
+        // wasm 导出重入守卫
+        //
+        // 浏览器会在某些 JS API 的调用栈里**同步**派发事件或回调：
+        //   - Safari 在 ScriptProcessorNode.connect() 后可能立刻拉一次音频缓冲；
+        //   - execCommand("copy") 同步触发 copy 事件；
+        //   - requestFullscreen / requestPointerLock 在部分实现里同步派发事件。
+        // 这些回调若再进入 wasm，miniquad 的 GLOBALS 已经被可变借用，会直接
+        // panic（RefCell already borrowed），表现为整局游戏黑屏卡死。
+        //
+        // 这里记录 wasm 的调用深度：重入的导出一律推迟到当前调用结束之后执行；
+        // 音频渲染每帧都会重入，推迟没有意义，直接返回空指针（输出静音）。
+        // -------------------------------------------------------------------
+        function guardWasmExports(raw) {
+            var depth = 0;
+            var current = '';
+            var guarded = {};
+            Object.keys(raw).forEach(function (name) {
+                var fn = raw[name];
+                if (typeof fn !== 'function') {
+                    guarded[name] = fn;
+                    return;
+                }
+                guarded[name] = function () {
+                    if (depth > 0) {
+                        if (name === 'sasa_web_render') return 0;
+                        var args = Array.prototype.slice.call(arguments);
+                        console.warn('[phira] 重入 wasm 导出已推迟: ' + name + ' (during ' + current + ')');
+                        setTimeout(function () {
+                            try { guarded[name].apply(null, args); } catch (e) { console.error(e); }
+                        }, 0);
+                        return undefined;
+                    }
+                    depth++;
+                    window.__phiraInWasm = true;
+                    var prev = current;
+                    current = name;
+                    try {
+                        return fn.apply(this, arguments);
+                    } finally {
+                        current = prev;
+                        depth--;
+                        window.__phiraInWasm = depth > 0;
+                    }
+                };
+            });
+            return guarded;
+        }
+
+        function fmtDuration(sec) {
+            if (!isFinite(sec) || sec <= 0) return '—';
+            if (sec < 1) return '不到 1 秒';
+            if (sec < 60) return Math.ceil(sec) + ' 秒';
+            const m = Math.floor(sec / 60);
+            const s = Math.round(sec % 60);
+            return m + ' 分 ' + s + ' 秒';
+        }
+
+        // 通过 fetch + ReadableStream 分块下载，实时统计进度、速度与预计剩余时间。
+        async function fetchWithProgress(url, label) {
+            const resp = await fetch(url);
+            if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            const total = Number(resp.headers.get('Content-Length')) || 0;
+            if (!resp.body || !resp.body.getReader) {
+                return new Uint8Array(await resp.arrayBuffer());
+            }
+            const reader = resp.body.getReader();
+            const chunks = [];
+            let loaded = 0;
+            const t0 = performance.now();
+            for (;;) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                chunks.push(value);
+                loaded += value.length;
+                const elapsed = (performance.now() - t0) / 1000;
+                const pct = total ? Math.min(99.5, (loaded / total) * 100) : 0;
+                ldFill.style.width = pct.toFixed(2) + '%';
+                ldPct.textContent = total
+                    ? pct.toFixed(1) + '%  (' + (loaded / 1048576).toFixed(1) + '/' + (total / 1048576).toFixed(1) + ' MB)'
+                    : (loaded / 1048576).toFixed(1) + ' MB';
+                if (elapsed > 0.35 && loaded > 0) {
+                    const speed = loaded / elapsed;
+                    if (total) {
+                        ldEta.textContent = '预计剩余 ' + fmtDuration((total - loaded) / speed);
+                    } else {
+                        ldEta.textContent = '速度 ' + (speed / 1048576).toFixed(2) + ' MB/s';
+                    }
+                } else {
+                    ldEta.textContent = '计算中…';
+                }
+            }
+            const buf = new Uint8Array(loaded);
+            let off = 0;
+            for (const c of chunks) {
+                buf.set(c, off);
+                off += c.length;
+            }
+            return buf;
+        }
+
+        try {
+            // 先把 IndexedDB 里的虚拟文件系统加载到内存，再启动 wasm。
+            if (window.__phiraStorageReady) {
+                ldHint.textContent = '正在读取本地存档…';
+                try {
+                    await window.__phiraStorageReady;
+                } catch (e) {
+                    // 存储初始化失败时仍然继续（文件会退回内存模式）。
+                }
+            }
+
+            ldHint.textContent = '正在下载游戏资源…';
+            // 通过无扩展名出口加载 wasm，避免 IDM 按 .wasm 拦截下载
+            const wasmUrl = "/__res?p=" + encodeURIComponent("./pkg/phira_bg.wasm");
+
+            let bytes = null;
+            try {
+                bytes = await fetchWithProgress(wasmUrl, 'wasm');
+            } catch (e) {
+                // 流式下载失败时回退到让 wasm-bindgen 自己抓取 URL
+                bytes = null;
+            }
+
+            ldFill.style.width = '100%';
+            ldFill.classList.add('indeterminate');
+            ldPct.textContent = '100%';
+            ldEta.textContent = '';
+            ldHint.textContent = '正在加载游戏资源，请稍候…';
+
+            let exports = null;
+            if (bytes) {
+                try {
+                    exports = await init(bytes);
+                } catch (e) {
+                    console.warn('直接注入 wasm 字节失败，回退为 URL 加载：', e);
+                    exports = await init(wasmUrl);
+                }
+            } else {
+                exports = await init(wasmUrl);
+            }
+            // wasm 导出重入守卫（见下方 guardWasmExports 说明）。
+            window.wasm_exports = guardWasmExports(exports);
+            window.wasm_memory = exports.memory;
+
+            // 统计 canvas 上的实际绘制调用，用来判断 wasm 是否真的画出了东西。
+            // 加载阶段 miniquad 的帧循环照样在跑，但一次绘制调用都没有（画面只是
+            // 清屏后的纯色），这正是「进度条动画播完还要黑屏一阵」的来源。
+            //
+            // 只能在 init() 之后做：此时 gl.js 已经建好 WebGL context，并把 instanced
+            // 绘制挂成了 context 自身的属性。Phira 走的是 instanced 路径
+            // （gl.drawArraysInstanced / gl.drawElementsInstanced），所以只改
+            // WebGLRenderingContext.prototype 是抓不到的，必须覆盖 context 实例上的属性。
+            let __drawTotal = 0;
+            window.__phiraDrawTotal = function () { return __drawTotal; };
+            (function () {
+                const cv = document.querySelector('canvas');
+                // 同一个 canvas 上重复 getContext 会拿到同一个已存在的 context，不会重建
+                const g = cv && (cv.getContext('webgl') || cv.getContext('webgl2'));
+                if (!g) return;
+                ['drawArrays', 'drawElements', 'drawArraysInstanced', 'drawElementsInstanced'].forEach(function (name) {
+                    if (typeof g[name] !== 'function') return;
+                    const orig = g[name].bind(g);
+                    g[name] = function () { __drawTotal++; return orig.apply(null, arguments); };
+                });
+            })();
+
+            // Phira 的 wasm 入口是 `quad_main`（phira/src/lib.rs 中的 #[no_mangle] 导出）
+            window.wasm_exports.quad_main();
+
+            // 等 wasm 真的在画布上画出内容后再淡出加载界面。
+            // 旧实现是固定 1.5s 后淡出，但 `quad_main()` 返回时 wasm 还没画第一帧：
+            // 它还要读 IndexedDB 存档、初始化 WebAudio、加载字体等，这期间帧循环
+            // 只做清屏，于是进度条动画播完就出现一段黑屏。
+            ldHint.textContent = '正在启动游戏引擎，请稍候…';
+            (function waitFirstFrame() {
+                const t0 = performance.now();
+                let last = window.__phiraDrawTotal();
+                let frames = 0;
+                (function tick() {
+                    const now = window.__phiraDrawTotal();
+                    if (now > last) frames++;
+                    else frames = 0;
+                    last = now;
+                    // 连续两帧都有绘制，认为画面已经稳定出现
+                    if (frames >= 2 || performance.now() - t0 > 30000) {
+                        loadingEl.classList.add('hide');
+                        return;
+                    }
+                    window.requestAnimationFrame(tick);
+                })();
+            })();
+        } catch (e) {
+            reportErr('init: ' + ((e && (e.stack || e.message)) || e));
+        }
+    </script>
+</body>
+</html>
